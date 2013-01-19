@@ -37,6 +37,8 @@ from GNS3.ProjectDialog import ProjectDialog
 from GNS3.Wizard import Wizard
 from __main__ import VERSION_INTEGER
 
+from GNS3.myfile import *
+
 class Application(QApplication, Singleton):
     """ GNS3 Application instance
         Used for containing global app variable,
@@ -346,28 +348,27 @@ class Application(QApplication, Singleton):
         confo.path = os.path.expanduser(confo.path)
         confo.workdir = os.path.expanduser(confo.workdir)
 
+
         # Qemu config
         self.systconf['qemu'] = systemQemuConf()
+        
         confo = self.systconf['qemu']
         confo.qemuwrapper_path = ConfDB().get('Qemu/qemuwrapper_path', unicode(''))
-        confo.qemuwrapper_workdir = ConfDB().get('Qemu/qemuwrapper_working_directory', unicode(''))
+        confo.qemuwrapper_workdir = unicode(work_dir)   #установка рабочей директории из myfile.py(вместо файла конфигурации)
         confo.qemu_path = ConfDB().get('Qemu/qemu_path', unicode('qemu'))
         confo.qemu_img_path = ConfDB().get('Qemu/qemu_img_path', unicode('qemu-img'))
-        confo.external_hosts = ConfDB().get('Qemu/external_hosts', unicode('localhost:10525')).split(',')
+        confo.external_hosts =  qemu_server.split(',')   #установка IP адреса сервера из myfile.py
         confo.enable_QemuManager = ConfDB().value("Qemu/enable_QemuManager", QVariant(True)).toBool()
         confo.import_use_QemuManager = ConfDB().value("Qemu/qemu_manager_import", QVariant(True)).toBool()
         confo.QemuManager_binding = ConfDB().get('Qemu/qemu_manager_binding', unicode('127.0.0.1'))
-        confo.qemuwrapper_port = int(ConfDB().get('Qemu/qemuwrapper_port', 10525))
-        confo.qemuwrapper_baseUDP = int(ConfDB().get('Qemu/qemuwrapper_baseUDP', 20000))
-        confo.qemuwrapper_baseConsole = int(ConfDB().get('Qemu/qemuwrapper_baseConsole', 3000))
+        #установка порта соединения к Qemuwrapper из myfile.py
+        confo.qemuwrapper_port = qemu_port
+        #установка начального значения UDP порта для кокретного VLAN 
+        confo.qemuwrapper_baseUDP = getConnectionPort(base_qemu_udp)
+        #установка начального окна VNC  для кокретного VLAN
+        confo.qemuwrapper_baseConsole = getVideoPort(base_qemu_console)
 
-        # replace ~user and $HOME by home directory
-        if os.environ.has_key("HOME"):
-            confo.qemuwrapper_path = confo.qemuwrapper_path.replace('$HOME', os.environ["HOME"])
-            confo.qemuwrapper_workdir =  confo.qemuwrapper_workdir.replace('$HOME', os.environ["HOME"])
-
-        confo.qemuwrapper_path = os.path.expanduser(confo.qemuwrapper_path)
-        confo.qemuwrapper_workdir = os.path.expanduser(confo.qemuwrapper_workdir)
+    
         
         # Capture config
         self.systconf['capture'] = systemCaptureConf()
@@ -457,13 +458,15 @@ class Application(QApplication, Singleton):
             dialog.activateWindow()
         
         if file:
-            self.mainWindow.load_netfile(file)
-        elif confo.project_startup and os.access(configFile, os.F_OK):
-            dialog = ProjectDialog()
-            dialog.show()
-            self.mainWindow.centerDialog(dialog)
-            dialog.raise_()
-            dialog.activateWindow()
+            self.mainWindow.loadNetfile(file)
+            
+        #Закомментировано появление окна, предлагающего создать проект
+        #elif confo.project_startup and os.access(configFile, os.F_OK):
+           # dialog = ProjectDialog()
+           # dialog.show()
+           # self.mainWindow.centerDialog(dialog)
+           # dialog.raise_()
+           # dialog.activateWindow()
 
         retcode = QApplication.exec_()
 

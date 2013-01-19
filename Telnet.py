@@ -20,6 +20,7 @@ import sys
 import subprocess as sub
 import GNS3.Globals as globals
 from GNS3.Utils import translate, debug
+from GNS3.myfile import *
 from PyQt4 import QtGui
 
 def connect(host, port, name):
@@ -34,6 +35,10 @@ def connect(host, port, name):
                 console = console.replace('%d', name)
                 debug('Start console with: ' + console)
                 if globals.GApp.systconf['general'].use_shell:
+                    #Если порт находится в диапазоне портов, отведенных для VNС окон qemu машин
+                    #То устанавливается команда для запуска VNC клиента
+                    if base_qemu_console <= port < base_qemu_console + deltaVideoPort*numberOfClients:
+                        console = vncCommandForQemu + server + ":" + str(5900 + port) + " &"
                     sub.Popen(console, shell=True)
                 else:
                     sub.Popen(console)

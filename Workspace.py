@@ -37,6 +37,7 @@ from GNS3.Config.Preferences import PreferencesDialog
 from GNS3.Node.IOSRouter import IOSRouter
 from GNS3.Node.AnyEmuDevice import AnyEmuDevice, JunOS, IDS, QemuDevice
 from GNS3.Pixmap import Pixmap
+from GNS3.myfile import *
 
 class Workspace(QMainWindow, Ui_MainWindow):
     """ This class is for managing the whole GUI `Workspace'.
@@ -341,7 +342,7 @@ class Workspace(QMainWindow, Ui_MainWindow):
     def __action_Config(self):
         """ Choose between extracting or importing configs
         """
-
+        
         options = [translate("Workspace", "Extracting to a directory"), translate("Workspace", "Importing from a directory")]
         (selection,  ok) = QtGui.QInputDialog.getItem(self, translate("Workspace", "Configs"),
                                               translate("Workspace", "Please choose an option"), options, 0, False)
@@ -371,6 +372,7 @@ class Workspace(QMainWindow, Ui_MainWindow):
         
         fb = fileBrowser(translate('Workspace', 'Directory to read startup-configs'), directory=os.path.normpath(globals.GApp.systconf['general'].project_path), parent=self)
         path = fb.getDir()
+        
         if path:
             try:
                 contents = os.listdir(path)
@@ -886,52 +888,27 @@ class Workspace(QMainWindow, Ui_MainWindow):
                 globals.GApp.mainWindow.capturesDock.stopAllCaptures()
 
                 # move dynamips & Qemu files
-                for node in globals.GApp.topology.nodes.values():
-                    if isinstance(node, IOSRouter) and self.projectWorkdir != node.hypervisor.workingdir:
-
-                        dynamips_files = glob.glob(os.path.normpath(node.hypervisor.workingdir) + os.sep + node.get_platform() + '_' + node.hostname + '_nvram*')
-                        dynamips_files += glob.glob(os.path.normpath(node.hypervisor.workingdir) + os.sep + node.get_platform() + '_' + node.hostname + '_disk*')
-                        dynamips_files += glob.glob(os.path.normpath(node.hypervisor.workingdir) + os.sep + node.get_platform() + '_' + node.hostname + '_slot*')
-                        dynamips_files += glob.glob(os.path.normpath(node.hypervisor.workingdir) + os.sep + node.get_platform() + '_' + node.hostname + '_rom')
-                        dynamips_files += glob.glob(os.path.normpath(node.hypervisor.workingdir) + os.sep + node.get_platform() + '_' + node.hostname + '_*flash*')
-                        dynamips_files += [os.path.normpath(node.hypervisor.workingdir) + os.sep + node.get_dynagen_device().formatted_ghost_file()]
-                            
-                        for file in dynamips_files:
-                            try:
-                                shutil.copy(file, self.projectWorkdir)
-                            except (OSError, IOError), e:
-                                debug("Warning: cannot copy " + file + " to " + self.projectWorkdir)
-                                continue
-                            except:
-                                continue
-                            
-                        # clean the original working directory
-                        self.clear_workdir(os.path.normpath(node.hypervisor.workingdir))
-                    
-                    if (isinstance(node, QemuDevice) or isinstance(node, JunOS) or isinstance(node, IDS)) and unbase:
-                        node.get_dynagen_device().unbase()
-
-                    if isinstance(node, AnyEmuDevice) and self.projectWorkdir != node.qemu.workingdir:
-                        
-                        # Stop this node
-                        node.stopNode()
-                        qemu_files = glob.glob(os.path.normpath(node.qemu.workingdir) + os.sep + node.hostname)
-                        for file in qemu_files:
-                            try:
-                                shutil.copytree(file, self.projectWorkdir + os.sep + node.hostname)
-                            except (OSError, IOError), e:
-                                debug("Warning: cannot copy " + file + " to " + self.projectWorkdir)
-                                continue
-                            except:
-                                continue
+                # На сервере работает программа Server.py которая отвечает за сохранение проектов
+                tmp_cort = os.path.dirname(self.projectFile).split(os.sep)
+                relWorkDir = tmp_cort[-2] + os.sep + tmp_cort[-1]     #Путь к  папке проета      
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.connect((server, gns_control_port))
+                sock.send("saveWorkDir" +";"+relWorkDir+";"+ str(vlan)) # Отправляется команда сохранения с указанием
+                                                                        # пути  папки проекта 
+                result = sock.recv(1024)
+                if result!="Ok":
+                    print "Working directory not save"
+                else: 
+                    print "Working directory saved"
+                sock.close()
 
                 # set the new working directory
                 try:
                     for hypervisor in globals.GApp.dynagen.dynamips.values():
-                        hypervisor.workingdir = self.projectWorkdir
+                        hypervisor.workingdir = work_dir
                 except lib.DynamipsError, msg:
                     QtGui.QMessageBox.critical(self, unicode(translate("Workspace", "Dynamips error"), "%s: %s") % (self.projectWorkdir, unicode(msg)))
-
+                    
         self.__action_Save(auto=True)
         self.setWindowTitle("GNS3 Project - " + self.projectFile) 
 
@@ -947,7 +924,7 @@ class Workspace(QMainWindow, Ui_MainWindow):
     def createSnapshot(self, name):
         """ Create a new snapshot of the current topology
         """
-
+        
         if self.projectFile is None:
             if self.__action_SaveAs() == False:
                 return
@@ -1067,7 +1044,19 @@ class Workspace(QMainWindow, Ui_MainWindow):
             self.loadNetfile(path)
                 
     def loadNetfile(self, path):
-
+        #Отправка команды загрузки проекта в рабочую директорию 
+        tmp_cort = os.path.dirname(path).split(os.sep)
+        relWorkDir = tmp_cort[-2] + os.sep + tmp_cort[-1]           
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((server, gns_control_port))
+        sock.send("loadWorkDir" +";"+relWorkDir+";"+ str(vlan))
+        result = sock.recv(1024)
+        if result!="Ok":
+            print "Working directory not load"
+        else:
+            print "Working directory loaded"
+        sock.close()
+        #-----------------------------------------------------
         try:
             # here the loading
             self.projectWorkdir = None

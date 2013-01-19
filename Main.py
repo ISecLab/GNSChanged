@@ -25,7 +25,46 @@ from optparse import OptionParser
 from GNS3.Application import Application
 from GNS3.Utils import translate
 from PyQt4 import QtCore
-from __main__ import VERSION
+from __main__ import VERSION  
+import os,errno
+from time import sleep
+
+
+
+def pid_is_running(pid):
+""" Функция проверяет запущен ли процесс
+    Если процесс работает то возвращает True иначе False
+"""    
+    if pid < 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError, e:
+        return e.errno == errno.EPERM
+    else:
+        return True
+
+def write_pidfile_or_die(path_to_pidfile):
+""" Функция проверяет наличие PID в файле path_to_pidfile
+    Если процесс PID которого записан в файле запущен, то программа завершается с кодом 1 
+""" 
+    if os.path.exists(path_to_pidfile):
+        pid = int(open(path_to_pidfile).read())
+        if pid_is_running(pid):
+            print("Sorry, found a pidfile!  Process {0} is still running.".format(pid))
+            exit(1)
+        else:
+            os.remove(path_to_pidfile)
+    open(path_to_pidfile, 'w').write(str(os.getpid()))
+    return path_to_pidfile
+
+
+#определЯется путь к PID файлу 
+userName = os.environ.get( "USERNAME" )
+pidfile = "/home/" + userName +  "/.gns3/gns.pid"
+
+#Если GNS уже запущен то завершаем программу
+write_pidfile_or_die(pidfile)
 
 usage = "usage: %prog [--debug] [--configdir <config_dir>] <net_file>"
 parser = OptionParser(usage, version="%prog " + VERSION)

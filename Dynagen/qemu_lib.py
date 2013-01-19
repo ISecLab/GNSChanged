@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 from socket import socket, AF_INET, SOCK_STREAM
 from dynamips_lib import NIO_udp, send, dowarning, debug, DynamipsError, validate_connect, Bridge, DynamipsVerError, get_reverse_udp_nio, Router, FRSW, ATMSW, ETHSW, DynamipsWarning
 import random
+from GNS3.myfile import *
 
 #version = "0.11.0.091411"
 (MAJOR, MINOR, SUB, RCVER) = (0, 2, 1, .1)
@@ -69,7 +70,7 @@ class UDPConnection:
 
 class Qemu(object):
 
-    def __init__(self, name, port=10525):
+    def __init__(self, name, port=qemu_port):
         self.port = port
         self.host = name
 
@@ -110,8 +111,10 @@ class Qemu(object):
         #all other needed variables
         self.name = name
         self.devices = []
-        self._baseconsole = 3000
-        self.udp = 20000
+        #Значения по умолчанию для начальных  VNC порта, UDP порта из myfile.py
+        self._baseconsole = getVideoPort(base_qemu_console)
+        self.udp = getConnectionPort(base_qemu_udp)
+        #----------------------------------------------------------------------
         self.default_udp = self.udp
         self.starting_udp = self.udp
         self._workingdir = None

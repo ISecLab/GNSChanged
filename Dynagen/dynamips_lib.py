@@ -26,6 +26,7 @@ import sys
 import os
 import re
 import copy
+from GNS3.myfile import *
 
 #version = "0.11.0.101003"
 # Minimum version of dynamips required. Currently 0.2.8-RC1 (due to change to
@@ -241,8 +242,10 @@ class Dynamips(object):
         timeout: how log to wait for a response to commands sent to the server
                  default is 3 seconds
     """
-
-    def __init__(self, host, port=7200, timeout=500):
+    
+    #В функции __init__ происходит установка значений по умолчанию 
+    #при соединении к гипервизору Dynamips 
+    def __init__(self, host, port=dynamips_port, timeout=500):
         self.s = socket(AF_INET, SOCK_STREAM)
         self.s.setblocking(0)
         self.s.settimeout(timeout)
@@ -259,9 +262,11 @@ class Dynamips(object):
         self.__workingdir = ''
         self.__host = host
         self.__port = port
-        self.__baseconsole = 2000
-        self.__baseaux = 2100
-        self.__udp = 10000
+        #Значения для начальных telnet порта, AUX порта, UDP порта из myfile.py
+        self.__baseconsole = getVideoPort(base_dynamips_console)
+        self.__baseaux = getVideoPort(base_aux)
+        self.__udp = getConnectionPort(base_dynamips_udp)
+        #---------------------------------------------------------------------
         self.__default_udp = self.__udp
         self.__starting_udp = self.__udp
         try:
@@ -2069,6 +2074,7 @@ class Router(Dynamips_device):
         ):
         if not isinstance(dynamips, Dynamips):
             raise DynamipsError, 'not a Dynamips instance'
+	 
         self.__d = dynamips
         self.__instance = Router.__instance_count
         Router.__instance_count += 1
@@ -2812,8 +2818,11 @@ class Router(Dynamips_device):
             cnfg: path to configuration file to be imported
         """
 
+	
         # Can't verify existance of cnfg because path is relative to backend
         send(self.__d, 'vm set_config %s %s' % (self.__name, '"' + cnfg + '"'))
+	
+	
         self.__cnfg = cnfg
 
     def __getcnfg(self):

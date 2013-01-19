@@ -24,6 +24,7 @@ import GNS3.Globals as globals
 from PyQt4 import QtCore, QtGui
 from GNS3.Ui.Form_NewProject import Ui_NewProject
 from GNS3.Utils import fileBrowser, translate
+from GNS3.myfile import *
 
 class ProjectDialog(QtGui.QDialog, Ui_NewProject):
     """ ProjectDialog class
@@ -36,6 +37,8 @@ class ProjectDialog(QtGui.QDialog, Ui_NewProject):
         self.connect(self.NewProject_browser, QtCore.SIGNAL('clicked()'), self.__setProjectDir)
         self.connect(self.pushButtonOpenProject, QtCore.SIGNAL('clicked()'), self.__openProject)
         self.connect(self.ProjectName, QtCore.SIGNAL('textEdited(const QString &)'), self.__projectNameEdited)
+        #При сохранении проекта  путь labs_dir используется по умолчанию 
+        globals.GApp.systconf['general'].project_path = unicode(labs_dir)
                    
         if newProject == False:
 
@@ -77,7 +80,7 @@ class ProjectDialog(QtGui.QDialog, Ui_NewProject):
             self.ProjectPath.setText(os.path.normpath(globals.GApp.systconf['general'].project_path) + os.sep + text)
         elif text:
             self.ProjectPath.setText(os.path.curdir + os.sep + text)
-
+       
     def saveProjectSettings(self):
         """ Save project settings
         """
@@ -113,6 +116,7 @@ class ProjectDialog(QtGui.QDialog, Ui_NewProject):
     def accept(self):
 
         settings = self.saveProjectSettings()
+        
         globals.GApp.mainWindow.createProject(settings)
         QtGui.QDialog.accept(self)
         

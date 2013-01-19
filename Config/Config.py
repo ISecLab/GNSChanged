@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 # vim: expandtab ts=4 sw=4 sts=4:
 #
 # Copyright (C) 2007-2010 GNS3 Development Team (http://www.gns3.net/team).
@@ -20,12 +20,22 @@
 #
 
 import os
+from GNS3.myfile import *
+import commands
 import GNS3.Globals as globals
 from GNS3.Config.Objects import iosImageConf, hypervisorConf, libraryConf, qemuImageConf, pixImageConf, junosImageConf, asaImageConf, idsImageConf
 from GNS3.Globals.Symbols import SYMBOLS, SYMBOL_TYPES
 from GNS3.Node.DecorativeNode import DecorativeNode
 from PyQt4 import QtCore
 from GNS3.Utils import Singleton, translate
+
+
+
+
+
+
+
+
 
 class ConfDB(Singleton, QtCore.QSettings):
 
@@ -161,7 +171,8 @@ class GNS_Conf(object):
             cgroup = basegroup + '/' + img_num
 
             img_filename = c.get(cgroup + "/filename", unicode(''))
-            img_hypervisors = c.get(cgroup + "/hypervisors", unicode('')).split()
+            #установка IP адреса гипервизора dynamips из myfile.py
+            img_hypervisors = unicode(dynamips_server).split(",")
 
             if img_filename == '':
                 continue
@@ -205,9 +216,9 @@ class GNS_Conf(object):
         for img_num in childGroups:
             cgroup = basegroup + '/' + img_num
 
-            hyp_port = c.get(cgroup + "/port",  '7200')
+            hyp_port = c.get(cgroup + "/port",  '7200') 
             hyp_host = c.get(cgroup + "/host", unicode(''))
-            hyp_wdir = c.get(cgroup + "/working_directory", unicode(''))
+            hyp_wdir = unicode(work_dir)
             hyp_baseUDP = c.get(cgroup + "/base_udp", '10000')
             hyp_baseConsole = c.get(cgroup + "/base_console", '2000')
             hyp_baseAUX = c.get(cgroup + "/base_aux", '0')
@@ -215,17 +226,18 @@ class GNS_Conf(object):
             # We need at least `hyp_host' and `hyp_port' to be set
             if hyp_host == '' or hyp_port == '':
                 continue
-
-            img_ref = hyp_host + ':' + hyp_port
+            
+            img_ref = server + ':' + str(dynamips_port) #установка значения ключа в словаре hypervisors
+                                                        #в котором хранятся настойки гипервизоров dynamips в ходе выполнения программы
 
             conf = hypervisorConf()
             conf.id = int(img_num)
-            conf.host = hyp_host
-            conf.port = int(hyp_port)
-            conf.workdir = hyp_wdir
-            conf.baseUDP = int(hyp_baseUDP)
-            conf.baseConsole = int(hyp_baseConsole)
-            conf.baseAUX = int(hyp_baseAUX)
+            conf.host = unicode(server)
+            conf.port = dynamips_port   #установка порта dynamips 
+            conf.workdir = unicode(work_dir)    #установка рабочей директории
+            conf.baseUDP = getConnectionPort(base_dynamips_udp) #установка начального порта UDP для VLAN
+            conf.baseConsole = getVideoPort(base_dynamips_console)  #установка начального порта telnet для VLAN
+            conf.baseAUX = getVideoPort(base_aux)   #установка начального порта AUX для VLAN
             globals.GApp.hypervisors[img_ref] = conf
 
             if conf.id >= globals.GApp.hypervisors_ids:

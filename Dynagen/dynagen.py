@@ -1,4 +1,4 @@
-#!/usr/bin/python
+﻿#!/usr/bin/python
 # -*- coding: utf-8 -*-
 
 """
@@ -48,7 +48,7 @@ from qemu_lib import Qemu, QemuDevice, AnyEmuDevice, FW, ASA, JunOS, IDS, nosend
 from validate import Validator
 from configobj import ConfigObj, flatten_errors
 from optparse import OptionParser
-
+from GNS3.myfile import *
 # Constants
 VERSION = '0.12.100613'
 CONFIGSPECPATH = ['/usr/share/dynagen', '/usr/local/share']
@@ -509,7 +509,7 @@ class Dynagen:
             
             #if this is normal connection to another device
             if devname not in self.devices:
-                raise DynamipsError, 'nonexistent device ' + devname
+                raise DynamipsError, 'nonexistent  device ' + devname
             remote_device = self.devices[devname]
             
             #use the same function for interface as left side
@@ -1041,8 +1041,24 @@ class Dynagen:
         ethswintlist = []  # A list of Ethernet Switch vlan mappings
         self.import_error = False
         config = self.open_config(FILENAME)
+	
+	#Если в файле topology.net будет указан неверный IP адрес сервера,
+    #то это приведет к ошибке. Следующий блок кода позволит этого избежать
+	for (key,value) in config.items():
+		mfind = re.search("^\d{3}\.\d{1,3}\.\d{1,3}\.\d{1,3}",key)
+		if mfind != None:
+			del config[key]
+			config[unicode(dynamips_server)] = value
+	for (key,value) in config.items():
+		if key.find("emu") > 0:
+			del config[key]
+			config[unicode('qemu ' + qemu_server)] = value
+    #-------------------------------------------------------------------
+		
 
-        self.debuglevel = config['debug']
+  
+
+	self.debuglevel = config['debug']
         if self.debuglevel > 0:
             setdebug(True)
 
@@ -1052,13 +1068,22 @@ class Dynagen:
             self.debug('Top-level items:')
             for item in config.scalars:
                 self.debug(item + ' = ' + str(config[item]))
-
-        self.debug('Dynamips/QemuWrapper Servers:')
-        for section in config.sections:
-            server = config[section]
-            if ' ' in server.name:
-                #create Qemu
-                (emulator, host) = server.name.split(' ')
+	self.debug('Dynamips/QemuWrapper Servers:')
+	for section in config.sections:
+        #Замена  адреса в конфигурации на адрес(IP_adress:port) из myfile.py
+        #для qemu машин  
+	    if section.find("emu") > 0:
+	        section = unicode("qemu " + qemu_server) 
+	    mfind = re.search("^\d{3}\.\d{1,3}\.\d{1,3}\.\d{1,3}",section)
+            if mfind != None:
+	        section = unicode(dynamips_server) 
+	    server = config[section]
+        #-------------------------------------------------------------------
+	    
+	    if ' ' in server.name:
+        #create Qemu
+		server.name = unicode("qemu " + qemu_server)
+		(emulator, host) = server.name.split(' ')
                 if emulator == 'qemu':
                     #connect to the Qemu Wrapper
                     try:
@@ -1067,6 +1092,7 @@ class Dynagen:
                             qemu_name = host
                             # controlPort is ignored
                             (host, controlPort) = host.split(':')
+
                         else:
                             #add ':10525' string to the name so that it does not conflict with name of dynamips server
                             qemu_name = host + ':10525'
@@ -1076,27 +1102,21 @@ class Dynagen:
                         self.dynamips[qemu_name] = Qemu(host, int(controlPort))
                         self.dynamips[qemu_name].reset()
                     except DynamipsError:
-                        self.dowarning('Could not connect to qemuwrapper server %s:%s' % (host,controlPort))
+                        self.dowarning('Could not connect to qemuwrapper server %s:%s' % (server,controlPort))
                         self.import_error = True
                         continue
 
-                    if server['workingdir'] == None:
-                        # If workingdir is not specified, set it to the same directory
-                        # as the network file
-                        realpath = os.path.realpath(FILENAME)
-                        workingdir = os.path.dirname(realpath)
-                    else:
-                        workingdir = server['workingdir']
+                   
                     try:
-                        self.dynamips[qemu_name].workingdir = workingdir
+                        self.dynamips[qemu_name].workingdir = work_dir  #установка рабочей папки из myfile.py
+                                                                        #вне зависимости от того, что указано в конфигурации("~/.gns3/gns3.ini")
                     except DynamipsError:
                         self.dowarning('Could not set working directory to %s on qemuwrapper server %s:10525' % (workingdir, server.name))
                         self.import_error = True
                         
-                    if server['udp'] != None:
-                        udp = server['udp']
-                    else:
-                        udp = self.global_qemu_udp
+                    udp = getConnectionPort(base_qemu_udp)  #установка начального UDP порта из myfile.py
+                                                            #вне зависимости от того, что указано в конфигурации
+			                    
                     # Modify the default base UDP NIO port for this server
                     try:
                         self.dynamips[qemu_name].udp = udp
@@ -1113,7 +1133,7 @@ class Dynagen:
                     devdefaults = {}
                     for key in DEVICETUPLE:
                         devdefaults[key] = {}
-
+		    
                     #handle the emulated devices
                     for subsection in server.sections:
                         device = server[subsection]
@@ -1124,7 +1144,7 @@ class Dynagen:
                                 if device[scalar] != None:
                                     devdefaults[device.name][scalar] = device[scalar]
                             continue
-
+			
                         # Create the device
                         try:
                             (devtype, name) = device.name.split(' ')
@@ -1143,6 +1163,7 @@ class Dynagen:
                             dev = IDS(self.dynamips[qemu_name], name=name)
                         elif devtype.lower() == 'qemu':
                             dev = QemuDevice(self.dynamips[qemu_name], name=name)
+			    
                         else:
                             self.dowarning('Unable to identify the type of device ' + device.name)
                             self.import_error = True
@@ -1171,8 +1192,7 @@ class Dynagen:
 
                         #add the whole device into global dictionary
                         self.devices[name] = dev
-
-                        #set the special device options
+			#set the special device options
                         for subitem in device.scalars:
                             if device[subitem] != None:
                                 self.debug('  ' + subitem + ' = ' + unicode(device[subitem]))
@@ -1221,20 +1241,21 @@ class Dynagen:
                 continue
             else:
                 #this is dynamips hypervisor
-                server.host = server.name
+                #установка адреса гипервизора dynamips для конкретного VLAN
+                #вне зависимости от того что написано в topology.net
+                server.name = unicode(dynamips_server)
+                server.host = unicode(dynamips_server)
                 controlPort = None
                 if ':' in server.host:
                     # unpack the server and port
                     (server.host, controlPort) = server.host.split(':')
-                if self.debuglevel >= 3:
+		if self.debuglevel >= 3:
                     self.debug('Server = ' + server.name)
                     for item in server.scalars:
-                        self.debug('  ' + str(item) + ' = ' + unicode(server[item]))
+			self.debug('  ' + str(item) + ' = ' + unicode(server[item]))
                 try:
-                    if server['port'] != None:
-                        controlPort = server['port']
-                    if controlPort == None:
-                        controlPort = 7200
+                    controlPort = dynamips_port #усановка порта  гипервизора dynamips
+                                                #вне зависимости от того что указано в topology.net
                     self.dynamips[server.name] = Dynamips(server.host, int(controlPort))
                     # Reset each server
                     self.dynamips[server.name].reset()
@@ -1248,10 +1269,8 @@ class Dynagen:
                     self.import_error = True
                     continue
 
-                if server['udp'] != None:
-                    udp = server['udp']
-                else:
-                    udp = self.globaludp
+                udp = getConnectionPort(base_dynamips_udp)  ##усановка начального UDP для роутеров CISCO
+                                                            #вне зависимости от того что указано в topology.net
                 # Modify the default base UDP NIO port for this server
                 try:
                     self.dynamips[server.name].udp = udp
@@ -1260,14 +1279,8 @@ class Dynagen:
                     self.dowarning('Could not set base UDP NIO port to %s on server %s' % (server['udp'], server.name))
                     self.import_error = True
 
-                if server['workingdir'] == None:
-                    # If workingdir is not specified, set it to the same directory
-                    # as the network file
-
-                    realpath = os.path.realpath(FILENAME)
-                    workingdir = os.path.dirname(realpath)
-                else:
-                    workingdir = server['workingdir']
+                workingdir = work_dir   #усановка рабочей директории для роутеров CISCO
+                                        #вне зависимости от того что указано в topology.net
 
                 try:
                     self.dynamips[server.name].workingdir = workingdir
@@ -1275,13 +1288,13 @@ class Dynagen:
                     self.dowarning('Could not set working directory to %s on server %s' % (workingdir, server.name))
                     self.import_error = True
 
-                # Has the base console port been overridden?
-                if server['console'] != None:
-                    self.dynamips[server.name].baseconsole = server['console']
+                #усановка начального telnet порта для роутеров CISCO
+                #вне зависимости от того что указано в topology.net
+                self.dynamips[server.name].baseconsole = getVideoPort(base_dynamips_console)
 
-                # Has the base aux port been overridden?
-                if server['aux'] != None:
-                    self.dynamips[server.name].baseaux = server['aux']
+                #усановка начального AUX порта для роутеров CISCO
+                #вне зависимости от того что указано в topology.net
+                self.dynamips[server.name].baseaux = getVideoPort(base_aux)
 
                 # Initialize device default dictionaries for every router type supported
                 devdefaults = {}
@@ -1818,13 +1831,8 @@ class Dynagen:
             self.dowarning('Could not connect to server: %s' % hypervisor_name)
             return
 
-        # if workingdir is not specified try the default_config or set it to the same directory
-        # as the network file
-        if self.defaults_config.has_key('workingdir'):
-            workingdir = self.defaults_config['workingdir']
-        else:
-            realpath = os.path.realpath(self.global_filename)
-            workingdir = os.path.dirname(realpath)
+        # установка рабочей директории при новом соединении к гипервизору Dynamips 
+        workingdir = work_dir
 
         try:
             self.dynamips[hypervisor_name].workingdir = workingdir
@@ -1886,10 +1894,11 @@ class Dynagen:
                         for option in device.available_options:
                             if getattr(device, option) != device.defaults[option]:
                                 self.defaults_config[h][model][option] = getattr(device, option)
+				
                     else:
-                        #find out the model of the device
+                        
                         model = device.model_string
-
+			
                         #create the default model config
                         self.defaults_config[h][model] = {}
                         if device.image == None:
@@ -1897,10 +1906,11 @@ class Dynagen:
                             device.image = '"None"'
                         self.defaults_config[h][model]['image'] = device.image
                         for option in self.generic_router_options:
-                            if option == 'cnfg':
+			    if option == 'cnfg':
                                 continue
                             if getattr(device, option) != device.defaults[option]:
                                 self.defaults_config[h][model][option] = getattr(device, option)
+                               
 
                         #handle ghostios
                         if device.ghost_status != device.defaults['ghost_status']:
@@ -2104,7 +2114,9 @@ class Dynagen:
         if not self.defaults_config_ran:
             self.get_defaults_config()
             self.defaults_config_ran = True
-
+	
+  
+	#find out the model of the device
         #go throught all hypervisor instances
         for hypervisor in self.dynamips.values():
 
@@ -2155,22 +2167,24 @@ class Dynagen:
         #all changes in hypervisor are reflected to running_config, so remove the dynamips.configchange
         for hypervisor in self.dynamips.values():
             hypervisor.configchange = False
-
+	
     def get_running_config(self, params):
         """return the running_config string"""
-
+	
+	
         #if this is a 'show run' command update the running config and print it out
         if len(params) == 1:
             self.update_running_config()
             #print out whole config into a tuple
             running_config_tuple = self.running_config.write()
             #TODO: sort the device, so that they do not appear in funny order
+	  
             return running_config_tuple
         elif len(params) == 2:
         #if this is a 'show run <device_name>'
             try:
                 self.update_running_config()
-                device = self.devices[params[1]]
+		device = self.devices[params[1]]
                 hypervisor_name = device.dynamips.host + ":" + str(device.dynamips.port)
                 if isinstance(device, Router):
                     device_section = self.running_config[hypervisor_name]['ROUTER ' + device.name]
@@ -2197,6 +2211,7 @@ class Dynagen:
                 return ('unknown device: ' + params[1], )
         else:
             return ('invalid show run command', )
+	
 
     def check_ghost_file(self, device):
         """check whether the ghostfile for this instance exists, if not create it"""
@@ -2477,6 +2492,7 @@ if __name__ == '__main__':
                 print "Reading configuration file...\n"
             try:
                 dynagen.import_config(FILENAME)
+		
             except DynamipsError, e:
                 # Strip leading error code if present
                 e = str(e)

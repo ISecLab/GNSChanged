@@ -19,7 +19,7 @@
 # code@gns3.net
 #
 
-import os, re, random, base64, traceback
+import os, sys, re, random, base64, traceback
 import GNS3.Globals as globals
 import GNS3.Dynagen.dynagen as dynagen_namespace
 import GNS3.Dynagen.dynamips_lib as lib
@@ -42,6 +42,7 @@ from GNS3.Node.ETHSW import ETHSW, init_ethsw_id
 from GNS3.Node.FRSW import init_frsw_id
 from GNS3.Node.Cloud import Cloud, init_cloud_id
 from GNS3.Node.AnyEmuDevice import init_emu_id, AnyEmuDevice
+from GNS3.myfile import *
 
 router_hostname_re = re.compile(r"""^R([0-9]+)""")
 ethsw_hostname_re = re.compile(r"""^SW([0-9]+)""")
@@ -165,7 +166,7 @@ class NETFile(object):
     def create_node(self, device, default_symbol_name, running_config_name):
         """ Create a new node
         """
-
+        
         symbol_name = x = y = z = hx = hy = None
         config = None
         if isinstance(device, qlib.AnyEmuDevice) and self.dynagen.globalconfig['qemu ' + device.dynamips.host +':' + str(device.dynamips.port)].has_key(running_config_name):
@@ -175,7 +176,8 @@ class NETFile(object):
             config = self.dynagen.globalconfig[device.dynamips.host +':' + str(device.dynamips.port)][running_config_name]
         elif self.dynagen.globalconfig.has_key(device.dynamips.host) and self.dynagen.globalconfig[device.dynamips.host].has_key(running_config_name):
             config = self.dynagen.globalconfig[device.dynamips.host][running_config_name]
-
+        
+       
         if config:
             if config.has_key('x'):
                 x = config['x']
@@ -189,6 +191,7 @@ class NETFile(object):
                 hy = config['hy']
             if config.has_key('symbol'):
                 symbol_name = config['symbol']
+            
 
         node = None
         if symbol_name:
@@ -244,6 +247,8 @@ class NETFile(object):
 
     def record_image(self, device):
         """ Record an image and all its settings in GNS3
+            Если в файле конфигурации проекта(topology.net) будет информация о новом образе
+            То настройки начальных портов (telnet, UDP, AUX) берутся из myfile.py
         """
 
         conf_image = iosImageConf()
@@ -271,12 +276,14 @@ class NETFile(object):
             conf_hypervisor = hypervisorConf()
             conf_hypervisor.id = globals.GApp.hypervisors_ids
             globals.GApp.hypervisors_ids +=1
-            conf_hypervisor.host = host
-            conf_hypervisor.port = device.dynamips.port
-            conf_hypervisor.workdir = unicode(device.dynamips.workingdir)
-            conf_hypervisor.baseUDP = device.dynamips.udp
-            conf_hypervisor.baseConsole = device.dynamips.baseconsole
-            conf_hypervisor.baseAUX = device.dynamips.baseaux
+            #Взятие настроек для нового образа  из myfile.py
+            conf_hypervisor.host = unicode(server) #IP адрес сервера с гипервизором Dynamips
+            conf_hypervisor.port = dynamips_port    #порт гипервизора Dynamips
+            conf_hypervisor.workdir = unicode(work_dir) #рабочая директория на сервере
+            conf_hypervisor.baseUDP = getConnectionPort(base_dynamips_udp) #начальный UDP порт
+            conf_hypervisor.baseConsole = getVideoPort(base_dynamips_console)   #Telnet порт
+            conf_hypervisor.baseAUX = getVideoPort(base_aux)    #начальный AUX порт
+            #---------------------------------------------------
             globals.GApp.hypervisors[conf_hypervisor.host + ':' + str(conf_hypervisor.port)] = conf_hypervisor
             globals.GApp.iosimages[host + ':' + device.image] = conf_image
 
@@ -563,7 +570,6 @@ class NETFile(object):
     def import_net_file(self, path):
         """ Import a .net file
         """
-
         if globals.GApp.systconf['dynamips'].import_use_HypervisorManager and globals.GApp.systconf['dynamips'].path == '':
             QtGui.QMessageBox.warning(globals.GApp.mainWindow, translate("NETFile", "Save"), translate("NETFile", "Please configure the path to Dynamips"))
             return
@@ -571,6 +577,7 @@ class NETFile(object):
         globals.GApp.workspace.clear()
         dynagen_namespace.CONFIGSPECPATH = []
         dir = os.path.dirname(dynagen_namespace.__file__)
+        
         dynagen_namespace.CONFIGSPECPATH.append(dir)
         try:
             dynagen_namespace.FILENAME = path
@@ -607,11 +614,27 @@ class NETFile(object):
         self.dynagen.apply_idlepc()
         self.dynagen.get_defaults_config()
         self.dynagen.update_running_config()
+        
+        #Установка правильного значения аттрибута cnfg для CIsco роутеров
+        #cnfg - это путь к папке Config в которой хранятся файлы конфигурации роутеров
+        #Так как GNS теперь работает удаленно то относительный путь не будет правильным
+        #Вычисляется абсолютный путь,используя абсолютный путь к файлу проета topology.net
+        delimetr  = "/"
+        tmpiter = path.split("/")
+        del tmpiter[-1]
+        for device in self.dynagen.devices.values():
+            if not isinstance(device, AnyEmuDevice):    #если это не Qemu машина(то есть роутер)
+                    if hasattr(device,'cnfg'):		
+                        abs_conf = delimetr.join(tmpiter) + "/" + getattr(device, 'cnfg')
+                        setattr(device,'cnfg',abs_conf)
+        #----------------------------------------------------------------------------------    
         debug("Running config before importing: " + str(self.dynagen.running_config))
         self.apply_gns3_data()
 
+
         connection_list = []
         config_dir = None
+        
         max_router_id = -1
         max_ethsw_id = -1
         max_frsw_id = -1
@@ -636,6 +659,7 @@ class NETFile(object):
                 self.populate_connection_list_for_router(device, connection_list)
                 if not config_dir and device.cnfg:
                     config_dir = os.path.dirname(device.cnfg)
+               
                 match_obj = router_hostname_re.match(node.hostname)
                 if match_obj:
                     id = int(match_obj.group(1))
@@ -793,18 +817,10 @@ class NETFile(object):
             init_emu_id(max_emu_id + 1)
 
         # update current hypervisor base port and base UDP
-        base_udp = 0
-        hypervisor_port = 0
-        working_dir = None
-
-        for dynamips in globals.GApp.dynagen.dynamips.values():
-            if isinstance(dynamips, lib.Dynamips):
-                if not working_dir:
-                    working_dir = dynamips.workingdir
-                if dynamips.port > hypervisor_port:
-                    hypervisor_port = dynamips.port
-                if dynamips.starting_udp > base_udp:
-                    base_udp = dynamips.starting_udp
+        #Взятие настроек для роутеров  из myfile.py независимо от того что написано в topology.net
+        base_udp = getConnectionPort(base_dynamips_udp) #начальный UDP
+        hypervisor_port = dynamips_port #порт гипервизора
+        working_dir = unicode(work_dir) #рабочая директория
 
         if base_udp:
             globals.GApp.dynagen.globaludp = base_udp + globals.GApp.systconf['dynamips'].udp_incrementation
@@ -822,7 +838,7 @@ class NETFile(object):
         if not globals.GApp.workspace.projectConfigs and config_dir and config_dir[-7:] == 'configs':
             globals.GApp.workspace.projectConfigs = os.path.abspath(config_dir)
             debug("Set configs directory: " + os.path.abspath(config_dir))
-
+        
         for connection in connection_list:
             self.add_connection(connection)
 
@@ -1034,6 +1050,7 @@ class NETFile(object):
                 try:          
                     self.dynagen.running_config[item.d][item.get_running_config_name()]['x'] = item.x()
                     self.dynagen.running_config[item.d][item.get_running_config_name()]['y'] = item.y()
+                                  
                     zvalue = item.zValue()
                     if zvalue != 0:
                         self.dynagen.running_config[item.d][item.get_running_config_name()]['z'] = zvalue
@@ -1053,6 +1070,7 @@ class NETFile(object):
                 config['configs'] = self.convert_to_relpath(globals.GApp.workspace.projectConfigs, path)
             if globals.GApp.workspace.projectWorkdir:
                 config['workdir'] = self.convert_to_relpath(globals.GApp.workspace.projectWorkdir, path)
+            
 
         # register matrix data
         matrix = globals.GApp.scene.matrix()
@@ -1090,7 +1108,7 @@ class NETFile(object):
                     h = hypervisor.host + ":" + str(hypervisor.port)
                 config = self.dynagen.running_config[h]
                 if config.has_key('workingdir'):
-                    config['workingdir'] = self.convert_to_relpath(config['workingdir'], path)
+                    config['workingdir'] = unicode(work_dir)
     
                 for model in dynagen_namespace.DEVICETUPLE:
                     if config.has_key(model):
